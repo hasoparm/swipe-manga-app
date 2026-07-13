@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>文字だけで出会う本屋（ランダム×ジャンル特化版）</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+            background-color: #121212; color: #e0e0e0;
+        }
+
+        /* 上部フィルターエリア */
+        #filter-container {
+            position: fixed; top: 0; left: 0; width: 100%;
+            background: rgba(18, 18, 18, 0.95); z-index: 100;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 0;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .filter-row {
+            display: flex; justify-content: center; overflow-x: auto; padding: 0 10px;
+        }
+        .filter-row::-webkit-scrollbar { display: none; } /* スクロールバー非表示 */
+
+        button {
+            background: none; border: 1px solid rgba(255, 255, 255, 0.4); color: #ccc;
+            padding: 5px 12px; margin: 0 4px; border-radius: 20px; cursor: pointer;
+            font-size: 0.85rem; white-space: nowrap; transition: all 0.2s;
+        }
+        button.active { background: #fff; color: #000; border-color: #fff; font-weight: bold; }
+
+        /* スワイプコンテナ */
+        #container {
+            height: 100%; display: flex;
+            transition: transform 0.3s ease-out;
+            will-change: transform;
+        }
+
+        /* カードレイアウト */
+        .card {
+            min-width: 100%; height: 100%;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            padding: 120px 30px 80px 30px; box-sizing: border-box;
+            text-align: center; position: relative;
+        }
+
+        /* 価格バッジ */
+        .price-badge {
+            background-color: rgba(255, 204, 0, 0.15);
+            border: 1px solid #ffcc00;
+            padding: 6px 14px; border-radius: 20px;
+            font-size: 0.9rem; color: #ffcc00; font-weight: bold;
+            margin-bottom: 30px; letter-spacing: 1px;
+        }
+
+        /* 楽天公式あらすじ・説明文 */
+        .description {
+            font-size: 1.1rem; line-height: 1.8;
+            margin-bottom: 40px; font-weight: 300;
+            max-width: 600px; text-align: left;
+            overflow-y: auto; max-height: 45vh;
+            padding-right: 10px;
+        }
+        .description::-webkit-scrollbar { width: 4px; }
+        .description::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+        /* アクションボタン */
+        .link-btn {
+            background-color: #bf0000; color: #fff;
+            padding: 16px 32px; text-decoration: none;
+            border-radius: 30px; font-weight: bold;
+            box-shadow: 0 4px 15px rgba(191,0,0,0.4);
+            font-size: 1rem; transition: transform 0.2s;
+        }
+        .link-btn:active { transform: scale(0.95); }
+
+        /* ステータス表示 */
+        .status-msg { font-size: 1.1rem; color: #888; }
+    </style>
+</head>
+<body>
+
+<!-- 1. 2段式フィルター -->
+<div id="filter-container">
+    <!-- 1段目：ジャンル -->
+    <div class="filter-row">
+        <button onclick="changeGenre('1019011')" id="g-all" class="active">すべてのマンガ</button>
+        <button onclick="changeGenre('1019011001')" id="g-seinen">青年マンガ</button>
+        <button onclick="changeGenre('1019011002')" id="g-shonen">少年マンガ</button>
+        <button onclick="changeGenre('1019011003')" id="g-shojo">少女マンガ</button>
+    </div>
+    <!-- 2段目：価格帯 -->
+    <div class="filter-row">
+        <button onclick="changePrice('free')" id="p-free" class="active">今だけ ¥0</button>
+        <button onclick="changePrice('sale')" id="p-sale">割引セール</button>
+    </div>
+</div>
+
+<!-- 2. メインコンテナ -->
+<div id="container">
+    <div class="card"><p class="status-msg">読み込み中...</p></div>
+</div>
+
+<script>
+    // ⚙️ 設定エリア（楽天のIDを取得したらここを書き換えます）
+    const RAKUTEN_APP_ID = 'YOUR_RAKUTEN_APP_ID'; 
+    const RAKUTEN_AFFILIATE_ID = 'YOUR_AFFILIATE_ID'; 
+    
+    let currentGenre = '1019011'; // 初期値：コミック全体
+    let currentPriceMode = 'free'; // 初期値：無料本
+    let booksData = [];
+    let currentIdx = 0;
+    const container = document.getElementById('container');
+
+    // 🌐 楽天APIからデータを取得する関数
+    async function fetchRakutenData() {
+        container.innerHTML = '<div class="card"><p class="status-msg">本を探しています...</p></div>';
+        
+        // IDが未設定の場合はサンプルデモデータを表示
+        if (RAKUTEN_APP_ID === 'YOUR_RAKUTEN_APP_ID') {
+            loadSampleData();
+            return;
+        }
+
+        let url = `https://app.rakuten.co.jp/services/api/BooksKoboEbook/Search/20170426?applicationId=${RAKUTEN_APP_ID}&affiliateId=${RAKUTEN_AFFILIATE_ID}&format=json&koboGenreId=${currentGenre}&hits=40`;
+        
+        if (currentPriceMode === 'free') {
+            url += '&itemPrice=0';
+        } else {
+            url += '&salesType=2'; // 割引のある商品
+        }
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (!data.Items || data.Items.length === 0) {
+                container.innerHTML = '<div class="card"><p class="status-msg">条件に合う本が見つかりませんでした。</p></div>';
+                return;
+            }
+
+            // 必要なデータだけ抽出して配列にする
+            let items = data.Items.map(item => {
+                const b = item.Item;
+                let priceLabel = `¥${b.itemPrice}`;
+                if (b.itemPrice === 0) priceLabel = '期間限定 ¥0';
+                
+                return {
+                    desc: b.itemCaption || '（この作品には説明文が登録されていません。スワイプして次の本を探そう！）',
+                    priceText: priceLabel,
+                    url: b.affiliateUrl || b.itemUrl
+                };
+            }).filter(b => b.desc.length > 15); // あらすじが短すぎるものは除外
+
+            // ✨ 【神機能】取得した本をランダムにシャッフル！
+            booksData = items.sort(() => Math.random() - 0.5);
+
+            renderCards();
+        } catch (error) {
+            console.error(error);
+            container.innerHTML = '<div class="card"><p class="status-msg">通信エラーが発生しました。</p></div>';
+        }
+    }
+
+    // 🎨 画面描画
+    function renderCards() {
+        container.innerHTML = '';
+        if (booksData.length === 0) {
+            container.innerHTML = '<div class="card"><p class="status-msg">表示できる作品がありません。</p></div>';
+            return;
+        }
+
+        booksData.forEach(book => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <div class="price-badge">${book.priceText}</div>
+                <div class="description">${book.desc}</div>
+                <a href="${book.url}" class="link-btn" target="_blank">この本の正体を見る</a>
+            `;
+            container.appendChild(card);
+        });
+        currentIdx = 0;
+        updatePosition();
+    }
+
+    // ジャンル切り替え
+    function changeGenre(genreId) {
+        currentGenre = genreId;
+        ['g-all', 'g-seinen', 'g-shonen', 'g-shojo'].forEach(id => document.getElementById(id).classList.remove('active'));
+        if(genreId === '1019011') document.getElementById('g-all').classList.add('active');
+        if(genreId === '1019011001') document.getElementById('g-seinen').classList.add('active');
+        if(genreId === '1019011002') document.getElementById('g-shonen').classList.add('active');
+        if(genreId === '1019011003') document.getElementById('g-shojo').classList.add('active');
+        fetchRakutenData();
+    }
+
+    // 価格帯切り替え
+    function changePrice(mode) {
+        currentPriceMode = mode;
+        document.getElementById('p-free').classList.toggle('active', mode === 'free');
+        document.getElementById('p-sale').classList.toggle('active', mode === 'sale');
+        fetchRakutenData();
+    }
+
+    function updatePosition() {
+        container.style.transform = `translateX(${-currentIdx * 100}%)`;
+    }
+
+    // 📱 タッチ・スワイプ処理
+    let startX = 0; let isDragging = false;
+    container.addEventListener('touchstart', (e) => { isDragging = true; startX = e.touches[0].clientX; });
+    container.addEventListener('touchend', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        const diffX = startX - e.changedTouches[0].clientX;
+        if (diffX > 60 && currentIdx < booksData.length - 1) currentIdx++;
+        else if (diffX < -60 && currentIdx > 0) currentIdx--;
+        updatePosition();
+    });
+
+    // 💻 マウス処理（パソコン検証用）
+    container.addEventListener('mousedown', (e) => { isDragging = true; startX = e.pageX; });
+    container.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        const diffX = startX - e.pageX;
+        if (diffX > 60 && currentIdx < booksData.length - 1) currentIdx++;
+        else if (diffX < -60 && currentIdx > 0) currentIdx--;
+        updatePosition();
+    });
+    container.addEventListener('mousemove', (e) => { if(isDragging) e.preventDefault(); });
+
+    // 📝 デモ用サンプルデータ（ID設定前のみ表示）
+    function loadSampleData() {
+        const samples = {
+            '1019011': [
+                { priceText: '期間限定 ¥0', desc: '【すべてのマンガ・無料】ここは総合ロビーです。開くたびに順番がランダムに入れ替わります！スワイプすると次の本へ進みます。上部のボタンでジャンルを「青年マンガ」などに絞り込むこともできます。' },
+                { priceText: '期間限定 ¥0', desc: '【すべてのマンガ・無料②】2枚目のデモカードです。あらすじだけで本を選ぶワクワク感を、この静的サイトだけで完全自動化して提供できます！' }
+            ],
+            '1019011001': [
+                { priceText: '期間限定 ¥0', desc: '【青年マンガ・無料】「裏社会のリアルを描いた衝撃作。謎の組織に命を狙われた主人公の運命は…」といった、大人向けのゾクゾクするあらすじがここに自動で引っ張られてきます。' }
+            ],
+            '1019011002': [
+                { priceText: '期間限定 ¥0', desc: '【少年マンガ・無料】「仲間との絆、熱いバトル！超能力に目覚めた少年が世界の危機に立ち向かう王道ファンタジー！」のようなワクワクする文章だけが出現します。' }
+            ],
+            '1019011003': [
+                { priceText: '期間限定 ¥0', desc: '【少女マンガ・無料】「学校一のモテ男と、なぜか秘密の同居生活がスタート！？不器用な二人の距離感に胸キュンが止まらないラブストーリー！」が出現します。' }
+            ]
+        };
+        
+        // セールモードの時は価格表記を偽装してデモ表示
+        let targetData = samples[currentGenre] || samples['1019011'];
+        booksData = targetData.map(b => {
+            return {
+                desc: b.desc,
+                priceText: currentPriceMode === 'free' ? '期間限定 ¥0' : '50% OFF (¥264)',
+                url: '#'
+            };
+        });
+        renderCards();
+    }
+
+    fetchRakutenData();
+</script>
+</body>
+</html>
