@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>文字だけで出会う本屋（ランダム×ジャンル特化版）</title>
+    <title>文字だけで出会う本屋（ボタン付き改良版）</title>
     <style>
         body, html {
             margin: 0; padding: 0; height: 100%;
@@ -23,14 +23,14 @@
         .filter-row {
             display: flex; justify-content: center; overflow-x: auto; padding: 0 10px;
         }
-        .filter-row::-webkit-scrollbar { display: none; } /* スクロールバー非表示 */
+        .filter-row::-webkit-scrollbar { display: none; }
 
-        button {
+        .filter-btn {
             background: none; border: 1px solid rgba(255, 255, 255, 0.4); color: #ccc;
             padding: 5px 12px; margin: 0 4px; border-radius: 20px; cursor: pointer;
             font-size: 0.85rem; white-space: nowrap; transition: all 0.2s;
         }
-        button.active { background: #fff; color: #000; border-color: #fff; font-weight: bold; }
+        .filter-btn.active { background: #fff; color: #000; border-color: #fff; font-weight: bold; }
 
         /* スワイプコンテナ */
         #container {
@@ -44,7 +44,7 @@
             min-width: 100%; height: 100%;
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
-            padding: 120px 30px 80px 30px; box-sizing: border-box;
+            padding: 120px 30px 160px 30px; box-sizing: border-box;
             text-align: center; position: relative;
         }
 
@@ -57,18 +57,18 @@
             margin-bottom: 30px; letter-spacing: 1px;
         }
 
-        /* 楽天公式あらすじ・説明文 */
+        /* あらすじ説明文 */
         .description {
             font-size: 1.1rem; line-height: 1.8;
             margin-bottom: 40px; font-weight: 300;
             max-width: 600px; text-align: left;
-            overflow-y: auto; max-height: 45vh;
+            overflow-y: auto; max-height: 40vh;
             padding-right: 10px;
         }
         .description::-webkit-scrollbar { width: 4px; }
         .description::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
 
-        /* アクションボタン */
+        /* アクションボタン（正体を見る） */
         .link-btn {
             background-color: #bf0000; color: #fff;
             padding: 16px 32px; text-decoration: none;
@@ -78,7 +78,22 @@
         }
         .link-btn:active { transform: scale(0.95); }
 
-        /* ステータス表示 */
+        /* 🆕 下部ナビゲーションボタンエリア */
+        #nav-container {
+            position: fixed; bottom: 0; left: 0; width: 100%;
+            background: linear-gradient(to top, rgba(18,18,18,1) 70%, rgba(18,18,18,0));
+            padding: 20px 0 30px 0; z-index: 100;
+            display: flex; justify-content: center; gap: 20px;
+        }
+        .nav-action-btn {
+            background-color: #2a2a2a; border: 1px solid rgba(255,255,255,0.1); color: #fff;
+            padding: 12px 24px; border-radius: 25px; font-size: 0.95rem; font-weight: bold;
+            cursor: pointer; display: flex; align-items: center; gap: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: all 0.2s;
+        }
+        .nav-action-btn:active { transform: scale(0.95); background-color: #3a3a3a; }
+        .nav-action-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
         .status-msg { font-size: 1.1rem; color: #888; }
     </style>
 </head>
@@ -86,17 +101,15 @@
 
 <!-- 1. 2段式フィルター -->
 <div id="filter-container">
-    <!-- 1段目：ジャンル -->
     <div class="filter-row">
-        <button onclick="changeGenre('1019011')" id="g-all" class="active">すべてのマンガ</button>
-        <button onclick="changeGenre('1019011001')" id="g-seinen">青年マンガ</button>
-        <button onclick="changeGenre('1019011002')" id="g-shonen">少年マンガ</button>
-        <button onclick="changeGenre('1019011003')" id="g-shojo">少女マンガ</button>
+        <button onclick="changeGenre('1019011')" id="g-all" class="filter-btn active">すべてのマンガ</button>
+        <button onclick="changeGenre('1019011001')" id="g-seinen" class="filter-btn">青年マンガ</button>
+        <button onclick="changeGenre('1019011002')" id="g-shonen" class="filter-btn">少年マンガ</button>
+        <button onclick="changeGenre('1019011003')" id="g-shojo" class="filter-btn">少女マンガ</button>
     </div>
-    <!-- 2段目：価格帯 -->
     <div class="filter-row">
-        <button onclick="changePrice('free')" id="p-free" class="active">今だけ ¥0</button>
-        <button onclick="changePrice('sale')" id="p-sale">割引セール</button>
+        <button onclick="changePrice('free')" id="p-free" class="filter-btn active">今だけ ¥0</button>
+        <button onclick="changePrice('sale')" id="p-sale" class="filter-btn">割引セール</button>
     </div>
 </div>
 
@@ -105,34 +118,33 @@
     <div class="card"><p class="status-msg">読み込み中...</p></div>
 </div>
 
+<!-- 🆕 3. 下部ナビゲーションボタン -->
+<div id="nav-container">
+    <button id="btn-prev" class="nav-action-btn" onclick="goPrev()" disabled>◀ 前の本へ</button>
+    <button id="btn-next" class="nav-action-btn" onclick="goNext()">次の本へ ▶</button>
+</div>
+
 <script>
-    // ⚙️ 設定エリア（楽天のIDを取得したらここを書き換えます）
     const RAKUTEN_APP_ID = 'YOUR_RAKUTEN_APP_ID'; 
     const RAKUTEN_AFFILIATE_ID = 'YOUR_AFFILIATE_ID'; 
     
-    let currentGenre = '1019011'; // 初期値：コミック全体
-    let currentPriceMode = 'free'; // 初期値：無料本
+    let currentGenre = '1019011'; 
+    let currentPriceMode = 'free'; 
     let booksData = [];
     let currentIdx = 0;
     const container = document.getElementById('container');
 
-    // 🌐 楽天APIからデータを取得する関数
     async function fetchRakutenData() {
         container.innerHTML = '<div class="card"><p class="status-msg">本を探しています...</p></div>';
         
-        // IDが未設定の場合はサンプルデモデータを表示
         if (RAKUTEN_APP_ID === 'YOUR_RAKUTEN_APP_ID') {
             loadSampleData();
             return;
         }
 
         let url = `https://app.rakuten.co.jp/services/api/BooksKoboEbook/Search/20170426?applicationId=${RAKUTEN_APP_ID}&affiliateId=${RAKUTEN_AFFILIATE_ID}&format=json&koboGenreId=${currentGenre}&hits=40`;
-        
-        if (currentPriceMode === 'free') {
-            url += '&itemPrice=0';
-        } else {
-            url += '&salesType=2'; // 割引のある商品
-        }
+        if (currentPriceMode === 'free') url += '&itemPrice=0';
+        else url += '&salesType=2';
 
         try {
             const response = await fetch(url);
@@ -140,23 +152,23 @@
             
             if (!data.Items || data.Items.length === 0) {
                 container.innerHTML = '<div class="card"><p class="status-msg">条件に合う本が見つかりませんでした。</p></div>';
+                updateNavButtons();
                 return;
             }
 
-            // 必要なデータだけ抽出して配列にする
             let items = data.Items.map(item => {
                 const b = item.Item;
                 let priceLabel = `¥${b.itemPrice}`;
                 if (b.itemPrice === 0) priceLabel = '期間限定 ¥0';
                 
                 return {
-                    desc: b.itemCaption || '（この作品には説明文が登録されていません。スワイプして次の本を探そう！）',
+                    desc: b.itemCaption || '（この作品には説明文が登録されていません。次の本を探そう！）',
                     priceText: priceLabel,
                     url: b.affiliateUrl || b.itemUrl
                 };
-            }).filter(b => b.desc.length > 15); // あらすじが短すぎるものは除外
+            }).filter(b => b.desc.length > 15);
 
-            // ✨ 【神機能】取得した本をランダムにシャッフル！
+            // 取得したリストを毎回ランダムにシャッフル
             booksData = items.sort(() => Math.random() - 0.5);
 
             renderCards();
@@ -166,7 +178,6 @@
         }
     }
 
-    // 🎨 画面描画
     function renderCards() {
         container.innerHTML = '';
         if (booksData.length === 0) {
@@ -188,7 +199,33 @@
         updatePosition();
     }
 
-    // ジャンル切り替え
+    // 🆕 「次の本へ」ボタンの処理
+    function goNext() {
+        if (currentIdx < booksData.length - 1) {
+            currentIdx++;
+            updatePosition();
+        }
+    }
+
+    // 🆕 「前の本へ」ボタンの処理
+    function goPrev() {
+        if (currentIdx > 0) {
+            currentIdx--;
+            updatePosition();
+        }
+    }
+
+    function updatePosition() {
+        container.style.transform = `translateX(${-currentIdx * 100}%)`;
+        updateNavButtons();
+    }
+
+    // 🆕 ボタンの活性・非活性状態を切り替える
+    function updateNavButtons() {
+        document.getElementById('btn-prev').disabled = (currentIdx === 0);
+        document.getElementById('btn-next').disabled = (currentIdx >= booksData.length - 1 || booksData.length === 0);
+    }
+
     function changeGenre(genreId) {
         currentGenre = genreId;
         ['g-all', 'g-seinen', 'g-shonen', 'g-shojo'].forEach(id => document.getElementById(id).classList.remove('active'));
@@ -199,7 +236,6 @@
         fetchRakutenData();
     }
 
-    // 価格帯切り替え
     function changePrice(mode) {
         currentPriceMode = mode;
         document.getElementById('p-free').classList.toggle('active', mode === 'free');
@@ -207,11 +243,7 @@
         fetchRakutenData();
     }
 
-    function updatePosition() {
-        container.style.transform = `translateX(${-currentIdx * 100}%)`;
-    }
-
-    // 📱 タッチ・スワイプ処理
+    // スワイプ処理
     let startX = 0; let isDragging = false;
     container.addEventListener('touchstart', (e) => { isDragging = true; startX = e.touches[0].clientX; });
     container.addEventListener('touchend', (e) => {
@@ -223,7 +255,7 @@
         updatePosition();
     });
 
-    // 💻 マウス処理（パソコン検証用）
+    // マウス処理
     container.addEventListener('mousedown', (e) => { isDragging = true; startX = e.pageX; });
     container.addEventListener('mouseup', (e) => {
         if (!isDragging) return;
@@ -235,33 +267,36 @@
     });
     container.addEventListener('mousemove', (e) => { if(isDragging) e.preventDefault(); });
 
-    // 📝 デモ用サンプルデータ（ID設定前のみ表示）
+    // デモ用データ
     function loadSampleData() {
         const samples = {
             '1019011': [
-                { priceText: '期間限定 ¥0', desc: '【すべてのマンガ・無料】ここは総合ロビーです。開くたびに順番がランダムに入れ替わります！スワイプすると次の本へ進みます。上部のボタンでジャンルを「青年マンガ」などに絞り込むこともできます。' },
-                { priceText: '期間限定 ¥0', desc: '【すべてのマンガ・無料②】2枚目のデモカードです。あらすじだけで本を選ぶワクワク感を、この静的サイトだけで完全自動化して提供できます！' }
+                { desc: '【すべてのマンガ①】次へ・戻るボタンが追加されました！下のボタンをポチポチ押すだけで、カードが切り替わります。' },
+                { desc: '【すべてのマンガ②】2枚目のデモです。最初のカードでは「戻る」ボタンが自動で半透明になり、押せなくなっているのにも注目してください！' },
+                { desc: '【すべてのマンガ③】3枚目のデモです。毎回この中の順番がランダムにシャッフルされて表示されます。' }
             ],
             '1019011001': [
-                { priceText: '期間限定 ¥0', desc: '【青年マンガ・無料】「裏社会のリアルを描いた衝撃作。謎の組織に命を狙われた主人公の運命は…」といった、大人向けのゾクゾクするあらすじがここに自動で引っ張られてきます。' }
+                { desc: '【青年マンガ①】青年マンガのあらすじガチャ1枚目です。次へを押すと2枚目へ進みます。' },
+                { desc: '【青年マンガ②】青年マンガのあらすじガチャ2枚目です。戻るを押せば1枚目に戻れます。' }
             ],
             '1019011002': [
-                { priceText: '期間限定 ¥0', desc: '【少年マンガ・無料】「仲間との絆、熱いバトル！超能力に目覚めた少年が世界の危機に立ち向かう王道ファンタジー！」のようなワクワクする文章だけが出現します。' }
+                { desc: '【少年マンガ①】熱いバトルや冒険のあらすじがここにランダムで出現します！' }
             ],
             '1019011003': [
-                { priceText: '期間限定 ¥0', desc: '【少女マンガ・無料】「学校一のモテ男と、なぜか秘密の同居生活がスタート！？不器用な二人の距離感に胸キュンが止まらないラブストーリー！」が出現します。' }
+                { desc: '【少女マンガ①】胸キュン恋愛ストーリーのあらすじがここにランダムで出現します！' }
             ]
         };
         
-        // セールモードの時は価格表記を偽装してデモ表示
         let targetData = samples[currentGenre] || samples['1019011'];
+        // サンプルもランダムシャッフル
         booksData = targetData.map(b => {
             return {
                 desc: b.desc,
                 priceText: currentPriceMode === 'free' ? '期間限定 ¥0' : '50% OFF (¥264)',
                 url: '#'
             };
-        });
+        }).sort(() => Math.random() - 0.5);
+        
         renderCards();
     }
 
